@@ -4,7 +4,7 @@ on:
   push
     
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -41,7 +41,7 @@ jobs:
     - name: Run Migrations
       env:
         DATABASE_URL: 'postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/postgres'
-        run: python src/manage.py migrate
+      run: python src/manage.py migrate
     - name: Run Tests
       env:
         DATABASE_URL: 'postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/postgres'
