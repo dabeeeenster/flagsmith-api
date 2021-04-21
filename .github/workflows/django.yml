@@ -49,6 +49,7 @@ jobs:
           pytest src -p no:warnings
 
   build-dockerhub:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Set up QEMU
