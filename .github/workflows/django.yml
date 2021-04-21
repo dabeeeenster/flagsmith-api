@@ -72,6 +72,8 @@ jobs:
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   deploy-develop:
+    needs: test
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Cloning repo
@@ -81,5 +83,5 @@ jobs:
       - name: Push to dokku
         uses: dokku/github-action@master
         with:
-          git_remote_url: 'ssh://dokku@bitwarden.bullet-train.io:22/bullet-train-test'
+          git_remote_url: "ssh://dokku@bitwarden.bullet-train.io:22/bullet-train-test"
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
