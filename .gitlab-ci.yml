@@ -1,0 +1,82 @@
+stages:
+  - test
+  - build 
+  - deploy
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .venv/
+
+test:
+  image: python:3.7-slim
+  stage: test
+  services:
+    - postgres:10.9-alpine
+  variables:
+    DJANGO_SETTINGS_MODULE: "app.settings.test"
+    DATABASE_URL: postgres://testuser:testpass@postgres/test_db
+    POSTGRES_USER: testuser
+    POSTGRES_PASSWORD: testpass
+  script:
+    - pip install virtualenv # set up local venv dir for caching of packages
+    - virtualenv .venv
+    - source .venv/bin/activate 
+    - pip install -r requirements-dev.txt
+    - black --check .
+    - pytest src -p no:warnings
+
+build-dockerhub:
+  stage: build
+  tags:
+    - flagsmith-shell-runner
+  script:
+    - if [ "$CI_COMMIT_REF_NAME" == "master" ]; then IMAGE_TAG="latest"; else IMAGE_TAG=$CI_COMMIT_REF_SLUG; fi
+    - if [ "$CI_COMMIT_REF_NAME" == "master" ]; then IMAGE_TAG="latest"; elif [ "$CI_COMMIT_REF_NAME" == "develop" ]; then IMAGE_TAG="develop"; else IMAGE_TAG=$CI_COMMIT_TAG; fi
+    - echo $CI_COMMIT_REF_NAME > $CI_PROJECT_DIR/src/CI_COMMIT_REF_NAME
+    - echo $CI_COMMIT_SHA > $CI_PROJECT_DIR/src/CI_COMMIT_SHA
+    - echo $IMAGE_TAG > $CI_PROJECT_DIR/src/IMAGE_TAG
+    - docker login --username $DOCKER_HUB_PUSH_USERNAME_SHELL_RUNNER -p $DOCKER_HUB_PUSH_PASSWORD_SHELL_RUNNER
+    - docker build -t flagsmith/flagsmith-api:$IMAGE_TAG -f $CI_PROJECT_DIR/docker/Dockerfile .
+    - docker push flagsmith/flagsmith-api:$IMAGE_TAG
+  only:
+    - master
+    - tags
+    - develop
+  
+deploydevelop:
+  image: ilyasemenov/gitlab-ci-git-push
+  stage: deploy
+  script: git-push dokku@bitwarden.bullet-train.io:bullet-train
+  only:
+    - develop
+
+.deploy_to_beanstalk: &deploy_to_beanstalk |
+  echo "Deploying to beanstalk with label $CI_COMMIT_SHORT_SHA"
+  cp requirements.txt ./src/requirements.txt
+  cd src
+  eb deploy $ENVIRONMENT_NAME -l "$CI_COMMIT_SHORT_SHA"
+
+deployawsstaging:
+  image: flagsmith/eb-cli:latest
+  stage: deploy
+  variables:
+    ENVIRONMENT_NAME: staging-api
+    AWS_ACCESS_KEY_ID: "$AWS_STAGING_ACCESS_KEY_ID"
+    AWS_SECRET_ACCESS_KEY: "$AWS_STAGING_SECRET_ACCESS_KEY"
+  script:
+    - *deploy_to_beanstalk
+  only:
+    - staging
+
+deployawsmaster:
+  image: flagsmith/eb-cli:latest
+  stage: deploy
+  variables:
+    ENVIRONMENT_NAME: production-api
+    AWS_ACCESS_KEY_ID: "$AWS_PRODUCTION_ACCESS_KEY_ID"
+    AWS_SECRET_ACCESS_KEY: "$AWS_PRODUCTION_SECRET_ACCESS_KEY"
+  script:
+    - *deploy_to_beanstalk
+  only:
+    - master
